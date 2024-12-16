@@ -1,8 +1,9 @@
 (** mforth.ml v1.0.0
-    build with: ocamlfind ocamlopt -linkpkg -package stdio -o mforth mforth.ml
+    build with: ocamlfind ocamlopt -linkpkg -package base,stdio -o mforth mforth.ml
     Based off of the sector forth implementation: https://github.com/cesarblum/sectorforth
 
     minimaForth (C) Copyright 2024 Travis Montoya *)
+open Base
 open Stdio
 
 let version = "1.0.0"
@@ -28,16 +29,37 @@ module Memory = struct
   type t = { items : memory_item list }
 
   let empty : t = { items = [] }
-  let init (local_ (size : int)) = List.init size (fun _ -> Zero)
+  let init (local_ (size : int)) = List.init size ~f:(fun _ -> Zero)
+
+  let is_out_of_memory (memory : t) : bool =
+    not
+      (List.exists
+         ~f:(fun x ->
+           match x with
+           | Zero -> true
+           | _ -> false)
+         memory.items)
+  ;;
+
+  let next_available_space (memory : t) : int option =
+    List.find_mapi
+      ~f:(fun i x ->
+        match x with
+        | Zero -> Some i
+        | _ -> None)
+      memory.items
+  ;;
 
   let get (local_ (addr : int)) ~(memory : t) memory_item option =
     if addr < List.length memory.items then Some (List.nth memory.items addr) else None
   ;;
 
-  let store (item : memory_item) (addr : int) ~(memory : t) = failwith "Not implemented"
-
-  let is_out_of_memory (memory : t) : bool =
-    not (List.exists (fun x -> x = Zero) memory.items)
+  let store (item : memory_item) ~(local_ addr : int) ~(memory : t) : t =
+    if (not (is_out_of_memory memory)) && addr <= List.length memory.items
+    then (
+      let beg, tail = List.split_n memory.items addr in
+      { items = beg @ [ item ] @ tail })
+    else empty
   ;;
 end
 
@@ -77,11 +99,11 @@ module Stack = struct
         | [] -> ()
         | item :: rest ->
           (match item with
-           | Int x -> print_endline ("int " ^ string_of_int x)
-           | Float x -> print_endline ("float " ^ string_of_float x)
+           | Int x -> print_endline ("int " ^ Int.to_string x)
+           | Float x -> print_endline ("float " ^ Float.to_string x)
            | Char x -> print_endline ("char " ^ String.make 1 x)
            | String x -> print_endline ("string " ^ x)
-           | Bool x -> print_endline ("bool " ^ string_of_bool x));
+           | Bool x -> print_endline ("bool " ^ Bool.to_string x));
           print_items (idx + 1) rest
       in
       print_items 0 stack.items)
@@ -108,7 +130,7 @@ let () =
     print_endline "";
     let line = In_channel.input_line_exn stdin in
     match line with
-    | "bye" -> exit 0
+    | "bye" -> Stdlib.exit 0
     | line ->
       parse_line line;
       get_repl_line ()
