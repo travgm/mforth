@@ -1,0 +1,9 @@
+.vscode
+_build
+*.install
+*.merlin
+_opam
+*.cmx
+*.cmi
+*.o
+mforth
