@@ -4,6 +4,7 @@
 
     minimaForth (C) Copyright 2024 Travis Montoya *)
 open Base
+
 open Stdio
 
 let version = "1.0.0"
@@ -90,7 +91,7 @@ module Stack = struct
 
   let size (stack : t) : int = List.length stack.items
 
-  let print_stack (stack : t) : unit =
+  let print (stack : t) : unit =
     if size stack <= 0
     then print_endline "Stack is empty"
     else (
@@ -108,6 +109,22 @@ module Stack = struct
       in
       print_items 0 stack.items)
   ;;
+
+  let wrap_stack_item (item : string) : stack_item option =
+    match Int.of_string_opt item with
+    | Some n -> Some (Int n)
+    | None ->
+      (match Float.of_string_opt item with
+       | Some f -> Some (Float f)
+       | None ->
+         if String.length item = 1
+         then Some (Char (String.get item 0))
+         else (
+           match String.lowercase item with
+           | "true" -> Some (Bool true)
+           | "false" -> Some (Bool false)
+           | s -> Some (String s)))
+  ;;
 end
 
 let mforth_memory = Memory.empty
@@ -116,11 +133,16 @@ let return_stack = Stack.empty
 
 let parse_line (line : string) =
   match line with
-  | ".s" -> Stack.print_stack data_stack
-  | ".r" -> Stack.print_stack return_stack
-  | _ ->
-    print_endline ("unknown command: " ^ line);
-    ()
+  | ".s" -> Stack.print data_stack
+  | ".r" -> Stack.print return_stack
+  | item ->
+    (match Stack.wrap_stack_item (String.strip item) with
+     | Some stack_item ->
+       let _ = Stack.push stack_item data_stack in
+       ()
+     | None ->
+       print_endline ("unknown command: " ^ item);
+       ())
 ;;
 
 let () =
