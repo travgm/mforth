@@ -26,15 +26,19 @@ module Memory = struct
     | Zero
 
   type t = { items : memory_item list }
-  
-  let empty : t = { items = [] }
-  let init (local_ size : int) = List.init size (fun _ -> Zero)
 
-  let get (local_ addr : int) ~(memory : t) memory_item option =
+  let empty : t = { items = [] }
+  let init (local_ (size : int)) = List.init size (fun _ -> Zero)
+
+  let get (local_ (addr : int)) ~(memory : t) memory_item option =
     if addr < List.length memory.items then Some (List.nth memory.items addr) else None
   ;;
 
   let store (item : memory_item) (addr : int) ~(memory : t) = failwith "Not implemented"
+
+  let is_out_of_memory (memory : t) : bool =
+    not (List.exists (fun x -> x = Zero) memory.items)
+  ;;
 end
 
 module Stack = struct
