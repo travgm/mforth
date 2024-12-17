@@ -7,8 +7,8 @@
       5.2.0+jst
 
     minimaForth (C) Copyright 2024 Travis Montoya *)
-open Base
 
+open Base
 open Stdio
 
 let version = "1.0.0"
@@ -206,11 +206,15 @@ let parse_function (line : string) : func_record option =
   | name :: tokens -> Some { name; tokens }
 ;;
 
-(* Main line parser and REPL *)
+(* Main line parsers and REPL *)
 
 let parse_non_builtin (line : string) ~(d : DataState.data_areas) =
   let module S = Stack in
   match line with
+  | ("true" | "false") as bool_type ->
+    let bool_val = String.equal bool_type "true" in
+    let new_stack = S.push (S.Bool bool_val) ~stack:d.data_stack in
+    { d with data_stack = new_stack }
   | item ->
     if String.is_prefix item ~prefix:"\"" && String.is_suffix item ~suffix:"\""
     then (
@@ -252,7 +256,7 @@ let parse_line (line : string) ~(d : DataState.data_areas) =
       let new_stack = S.pop_and_print d.data_stack in
       { d with data_stack = new_stack })
   | ("+" | "-" | "*" | "/") as op -> eval_stack_op d ~op
-  | item -> parse_non_builtin line ~d:d
+  | item -> parse_non_builtin line ~d
 ;;
 
 let () =
