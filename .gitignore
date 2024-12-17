@@ -6,4 +6,5 @@ _opam
 *.cmx
 *.cmi
 *.o
+*.v
 mforth
