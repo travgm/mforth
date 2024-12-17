@@ -1,5 +1,11 @@
 (** mforth.ml v1.0.0
+
     build with: ocamlfind ocamlopt -linkpkg -package base,stdio -o mforth mforth.ml
+
+    Note:
+    ❯ ocamlopt --version
+      5.2.0+jst
+    
     Based off of the sector forth implementation: https://github.com/cesarblum/sectorforth
 
     minimaForth (C) Copyright 2024 Travis Montoya *)
@@ -85,16 +91,18 @@ module Stack = struct
     if size stack <= 0
     then print_endline "Stack is empty"
     else (
+      let stack_depth = size stack in
+      print_endline ("Stack depth: " ^ Int.to_string stack_depth);
       let rec print_items idx s =
         match s with
         | [] -> ()
         | item :: rest ->
           (match item with
-           | Int x -> print_endline ("int " ^ Int.to_string x)
-           | Float x -> print_endline ("float " ^ Float.to_string x)
-           | Char x -> print_endline ("char " ^ String.make 1 x)
-           | String x -> print_endline ("string " ^ x)
-           | Bool x -> print_endline ("bool " ^ Bool.to_string x));
+           | Int x -> print_endline (Int.to_string idx ^ ": int " ^ Int.to_string x)
+           | Float x -> print_endline (Int.to_string idx ^ ": float " ^ Float.to_string x)
+           | Char x -> print_endline (Int.to_string idx ^ ": char " ^ String.make 1 x)
+           | String x -> print_endline (Int.to_string idx ^ ": string " ^ x)
+           | Bool x -> print_endline (Int.to_string idx ^ ": bool " ^ Bool.to_string x));
           print_items (idx + 1) rest
       in
       print_items 0 stack.items)
@@ -143,12 +151,31 @@ type func_record =
 let parse_line (line : string) ~(d : DataState.data_areas) =
   let module S = Stack in
   match line with
+  (* Built-ins are compared here compared to dictionary functions *)
   | ".s" ->
     S.print d.data_stack;
     d
   | ".r" ->
     S.print d.return_stack;
     d
+  (* This might need to be moved to dictionary functions? depending how we compare those *)
+  | "+" | "-" | "*" | "/" ->
+    (match S.pop d.data_stack with
+     | None -> d
+     | Some (x, stack1) ->
+       (match S.pop stack1 with
+        | None -> d
+        | Some (y, stack2) ->
+          let result =
+            match x, y with
+            | S.Int x, S.Int y -> S.Int (x + y)
+            | S.Int x, S.Float y -> S.Float (Float.of_int x +. y)
+            | S.Float x, S.Int y -> S.Float (x +. Float.of_int y)
+            | S.Float x, S.Float y -> S.Float (x +. y)
+            | _ -> S.Int 0
+          in
+          let new_stack = S.push result ~stack:stack2 in
+          { d with data_stack = new_stack }))
   | item ->
     (match S.wrap_stack_item (String.strip item) with
      | Some stack_item ->
