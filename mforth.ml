@@ -4,19 +4,9 @@
 
     minimaForth (C) Copyright 2024 Travis Montoya *)
 open Base
-
 open Stdio
 
 let version = "1.0.0"
-
-type state =
-  | Execute
-  | Compile
-
-type func_record =
-  { name : string
-  ; tokens : string list
-  }
 
 module Memory = struct
   type memory_item =
@@ -75,7 +65,7 @@ module Stack = struct
   type t = { items : stack_item list }
 
   let empty : t = { items = [] }
-  let push (x : stack_item) (stack : t) : t = { items = x :: stack.items }
+  let push (x : stack_item) ~(stack : t) : t = { items = x :: stack.items }
 
   let pop (stack : t) : (stack_item * t) option =
     match stack.items with
@@ -127,35 +117,61 @@ module Stack = struct
   ;;
 end
 
-let mforth_memory = Memory.empty
-let data_stack = Stack.empty
-let return_stack = Stack.empty
+module DataState = struct
+  type data_areas =
+    { memory : Memory.t
+    ; data_stack : Stack.t
+    ; return_stack : Stack.t
+    }
 
-let parse_line (line : string) =
+  type t = { data : data_areas }
+
+  let init_data () =
+    { memory = Memory.empty; data_stack = Stack.empty; return_stack = Stack.empty }
+  ;;
+end
+
+type state =
+  | Execute
+  | Compile
+
+type func_record =
+  { name : string
+  ; tokens : string list
+  }
+
+let parse_line (line : string) ~(d : DataState.data_areas) =
+  let module S = Stack in
   match line with
-  | ".s" -> Stack.print data_stack
-  | ".r" -> Stack.print return_stack
+  | ".s" ->
+    S.print d.data_stack;
+    d
+  | ".r" ->
+    S.print d.return_stack;
+    d
   | item ->
-    (match Stack.wrap_stack_item (String.strip item) with
+    (match S.wrap_stack_item (String.strip item) with
      | Some stack_item ->
-       let _ = Stack.push stack_item data_stack in
-       ()
+       let new_stack = S.push stack_item ~stack:d.data_stack in
+       let new_data_state = { d with data_stack = new_stack } in
+       new_data_state
      | None ->
        print_endline ("unknown command: " ^ item);
-       ())
+       d)
 ;;
 
 let () =
   print_endline ("minimaForth " ^ version);
-  let rec get_repl_line () =
+  let data_state = DataState.init_data () in
+  let rec get_repl_line (d : DataState.data_areas) () =
     Out_channel.flush stdout;
     print_endline "";
     let line = In_channel.input_line_exn stdin in
     match line with
     | "bye" -> Stdlib.exit 0
     | line ->
-      parse_line line;
-      get_repl_line ()
+      let new_data_state = parse_line line ~d in
+      get_repl_line new_data_state ()
   in
-  get_repl_line ()
+  get_repl_line data_state ()
 ;;
