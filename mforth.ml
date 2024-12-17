@@ -208,26 +208,9 @@ let parse_function (line : string) : func_record option =
 
 (* Main line parser and REPL *)
 
-let parse_line (line : string) ~(d : DataState.data_areas) =
+let parse_non_builtin (line : string) ~(d : DataState.data_areas) =
   let module S = Stack in
   match line with
-  (* Built-ins NOT built-in functions are compared here compared to dictionary functions or built-in functions *)
-  | ".s" ->
-    S.print d.data_stack;
-    d
-  | ".r" ->
-    S.print d.return_stack;
-    d
-  | "." ->
-    if S.is_empty d.data_stack then (
-      print_endline "Stack underflow";
-      d
-    ) else (
-      let new_stack = S.pop_and_print d.data_stack in
-      { d with data_stack = new_stack } )
-  | ("+" | "-" | "*" | "/") as op -> eval_stack_op d ~op
-  (* Eventually need to break this out more into smaller functions. This is where we parse out 
-     stack operations, function definitions and execution? *)
   | item ->
     if String.is_prefix item ~prefix:"\"" && String.is_suffix item ~suffix:"\""
     then (
@@ -248,6 +231,28 @@ let parse_line (line : string) ~(d : DataState.data_areas) =
            (* This is probably where we should handle testing if its a function to execute *)
            print_endline ("unknown command: " ^ item);
            d))
+;;
+
+let parse_line (line : string) ~(d : DataState.data_areas) =
+  let module S = Stack in
+  match line with
+  (* Built-ins NOT built-in functions are compared here compared to dictionary functions or built-in functions *)
+  | ".s" ->
+    S.print d.data_stack;
+    d
+  | ".r" ->
+    S.print d.return_stack;
+    d
+  | "." ->
+    if S.is_empty d.data_stack
+    then (
+      print_endline "Stack underflow";
+      d)
+    else (
+      let new_stack = S.pop_and_print d.data_stack in
+      { d with data_stack = new_stack })
+  | ("+" | "-" | "*" | "/") as op -> eval_stack_op d ~op
+  | item -> parse_non_builtin line ~d:d
 ;;
 
 let () =
