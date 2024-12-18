@@ -205,13 +205,30 @@ let eval_stack_op (d : DataState.data_areas) ~(op : string) : DataState.data_are
 
 let try_parse_function (line : string) : func_record option =
   let module S = String in
-  if S.is_prefix line ~prefix:":" && S.is_suffix line ~suffix:";"
+  if S.is_prefix line ~prefix:":"
   then (
-    let name = S.sub line ~pos:1 ~len:(S.length line - 2) in
-    let tokens = S.split_on_chars name ~on:[ ' ' ] in
-    if List.length tokens >= 1
-    then Some { name = List.hd_exn tokens; tokens = List.tl_exn tokens }
-    else None)
+    let line = S.drop_prefix line 1 |> S.strip in
+    let rec tokenize acc current_str in_quotes chars =
+      match chars with
+      | [] ->
+        let final_tokens = if S.length current_str > 0 then current_str :: acc else acc in
+        List.rev final_tokens
+      | '"' :: rest ->
+        if in_quotes
+        then tokenize (("\"" ^ current_str ^ "\"") :: acc) "" false rest
+        else tokenize acc current_str true rest
+      | ' ' :: rest when not in_quotes ->
+        if S.length current_str > 0
+        then tokenize (current_str :: acc) "" false rest
+        else tokenize acc "" false rest
+      | c :: rest -> tokenize acc (current_str ^ String.make 1 c) in_quotes rest
+    in
+    let tokens = tokenize [] "" false (S.to_list line) in
+    match tokens with
+    | name :: rest ->
+      let body = List.take_while rest ~f:(fun x -> not (S.equal x ";")) in
+      Some { name; tokens = body }
+    | _ -> None)
   else None
 ;;
 
