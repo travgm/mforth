@@ -11,7 +11,15 @@
 open Base
 open Stdio
 
-let version = "1.0.0"
+let version = "minimaForth 1.0.0"
+
+let system_version =
+  let module SY = Stdlib.Sys in
+  let os = SY.os_type in
+  let arch = SY.word_size in
+  let platform = SY.ocaml_version in
+  Printf.sprintf "%s running on %s/%d-bit, OCaml version: %s" version os arch platform
+;;
 
 module Memory = struct
   type memory_item =
@@ -292,38 +300,58 @@ and check_and_execute_function ~(f : string) (d : DataState.data_areas) =
   | None -> d
 
 and parse_line (line : string) ~(d : DataState.data_areas) =
-  let module S = Stack in
-  match line with
-  | ".s" ->
-    S.print d.data_stack;
-    d
-  | ".r" ->
-    S.print d.return_stack;
-    d
-  | "." ->
-    if S.is_empty d.data_stack
-    then (
-      print_endline "Stack underflow";
-      d)
+  let module S = String in
+  let module ST = Stack in
+  let cleanup_line_comment =
+    if S.is_prefix line ~prefix:"(" && S.is_suffix line ~suffix:")"
+    then ""
     else (
-      let new_stack = S.pop_and_print d.data_stack in
-      { d with data_stack = new_stack })
-  | ("+" | "-" | "*" | "/") as op -> eval_stack_op d ~op
-  | item -> parse_non_builtin line ~d
+      match S.index line '(' with
+      | Some idx -> S.sub line ~pos:0 ~len:idx |> S.strip
+      | None -> line)
+  in
+  if S.length cleanup_line_comment = 0
+  then d
+  else (
+    match cleanup_line_comment with
+    | ".s" ->
+      ST.print d.data_stack;
+      d
+    | ".r" ->
+      ST.print d.return_stack;
+      d
+    | "." ->
+      if ST.is_empty d.data_stack
+      then (
+        print_endline "Stack underflow";
+        d)
+      else (
+        let new_stack = ST.pop_and_print d.data_stack in
+        { d with data_stack = new_stack })
+    | ".ver" ->
+      system_version |> print_endline;
+      d
+    | ("+" | "-" | "*" | "/") as op -> eval_stack_op d ~op
+    | item -> parse_non_builtin line ~d)
 ;;
 
 let () =
-  print_endline ("minimaForth " ^ version);
-  let data_state = DataState.init_data () in
-  let rec get_repl_line (d : DataState.data_areas) () =
+  let module S = String in
+  let module D = DataState in
+  print_endline (system_version ^ "\n");
+  let data_state = D.init_data () in
+  let rec get_repl_line (d : D.data_areas) () =
     Out_channel.flush stdout;
-    print_endline "";
     let line = In_channel.input_line_exn stdin in
     match line with
     | "bye" -> Stdlib.exit 0
     | line ->
-      let new_data_state = parse_line line ~d in
-      get_repl_line new_data_state ()
+      let line_cleaned = S.strip line in
+      if S.length line_cleaned = 0
+      then get_repl_line d ()
+      else (
+        let new_data_state = parse_line line_cleaned ~d in
+        get_repl_line new_data_state ())
   in
   get_repl_line data_state ()
 ;;
