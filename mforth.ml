@@ -157,6 +157,8 @@ module DataState = struct
     ; dictionary = Map.empty (module String)
     }
   ;;
+
+  let dict_item_exists ~(f : string) ~(d : data_areas) : bool = Map.mem d.dictionary f
 end
 
 type state =
@@ -199,42 +201,57 @@ let eval_stack_op (d : DataState.data_areas) ~(op : string) : DataState.data_are
        { d with data_stack = new_stack })
 ;;
 
-let parse_function (line : string) : func_record option =
+let check_and_execute_function ~(f : string) = failwith "Not implemented"
+
+let try_parse_function (line : string) : func_record option =
   let words = String.split_on_chars line ~on:[ ' ' ] in
   match words with
   | [] -> None
   | name :: tokens -> Some { name; tokens }
 ;;
 
+let try_parse_bool line =
+  let module ST = Stack in
+  match line with
+  | ("true" | "false") as bool_type -> Some (ST.Bool (String.equal bool_type "true"))
+  | _ -> None
+;;
+
+let try_parse_string line =
+  let module ST = Stack in
+  let module S = String in
+  if S.is_prefix line ~prefix:"\"" && S.is_suffix line ~suffix:"\""
+  then Some (ST.String (S.sub line ~pos:1 ~len:(S.length line - 2)))
+  else None
+;;
+
+let try_parse_number line =
+  let module ST = Stack in
+  match Int.of_string_opt line with
+  | Some n -> Some (ST.Int n)
+  | None ->
+    (match Float.of_string_opt line with
+     | Some f -> Some (ST.Float f)
+     | None -> None)
+;;
+
 (* Main line parsers and REPL *)
 
 let parse_non_builtin (line : string) ~(d : DataState.data_areas) =
-  let module S = Stack in
-  match line with
-  | ("true" | "false") as bool_type ->
-    let bool_val = String.equal bool_type "true" in
-    let new_stack = S.push (S.Bool bool_val) ~stack:d.data_stack in
-    { d with data_stack = new_stack }
-  | item ->
-    if String.is_prefix item ~prefix:"\"" && String.is_suffix item ~suffix:"\""
-    then (
-      let cleaned_str = String.sub item ~pos:1 ~len:(String.length item - 2) in
-      let new_stack = S.push (S.String cleaned_str) ~stack:d.data_stack in
-      { d with data_stack = new_stack })
+  let module ST = Stack in
+  let return_new_stack item = { d with data_stack = ST.push item ~stack:d.data_stack } in
+  match
+    Option.first_some
+      (try_parse_bool line)
+      (Option.first_some (try_parse_string line) (try_parse_number line))
+  with
+  | Some value -> return_new_stack value
+  | None ->
+    if DataState.dict_item_exists ~f:line ~d
+    then d
     else (
-      match Int.of_string_opt item with
-      | Some n ->
-        let new_stack = S.push (S.Int n) ~stack:d.data_stack in
-        { d with data_stack = new_stack }
-      | None ->
-        (match Float.of_string_opt item with
-         | Some f ->
-           let new_stack = S.push (S.Float f) ~stack:d.data_stack in
-           { d with data_stack = new_stack }
-         | None ->
-           (* This is probably where we should handle testing if its a function to execute *)
-           print_endline ("unknown command: " ^ item);
-           d))
+      print_endline ("unknown command: " ^ line);
+      d)
 ;;
 
 let parse_line (line : string) ~(d : DataState.data_areas) =
