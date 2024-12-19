@@ -144,6 +144,12 @@ module Stack = struct
            | "false" -> Some (Bool false)
            | s -> Some (String s)))
   ;;
+
+  let drop ~(d : t) : t =
+    match pop d with
+    | None -> d
+    | Some (_, s) -> s
+  ;;
 end
 
 module DataState = struct
@@ -267,6 +273,18 @@ let try_parse_number line =
 
 (* Main line parsers and REPL *)
 
+let cleanup_line_comment (line : string) : string =
+  let module S = String in
+  if S.is_prefix line ~prefix:"(" && S.is_suffix line ~suffix:")"
+  then ""
+  else (
+    match S.index line '(' with
+    | Some idx -> S.sub line ~pos:0 ~len:idx |> S.strip
+    | None -> line)
+;;
+
+(* This parse_* needs to be refactored to helper functions and soon probably move this
+    to modules. *)
 let rec parse_non_builtin (line : string) ~(d : DataState.data_areas) =
   let module ST = Stack in
   let return_new_stack item = { d with data_stack = ST.push item ~stack:d.data_stack } in
@@ -302,14 +320,8 @@ and check_and_execute_function ~(f : string) (d : DataState.data_areas) =
 and parse_line (line : string) ~(d : DataState.data_areas) =
   let module S = String in
   let module ST = Stack in
-  let cleanup_line_comment =
-    if S.is_prefix line ~prefix:"(" && S.is_suffix line ~suffix:")"
-    then ""
-    else (
-      match S.index line '(' with
-      | Some idx -> S.sub line ~pos:0 ~len:idx |> S.strip
-      | None -> line)
-  in
+  let return_new_stack ~(s : Stack.t) = { d with data_stack = s } in
+  let cleanup_line_comment = cleanup_line_comment line in
   if S.length cleanup_line_comment = 0
   then d
   else (
@@ -332,6 +344,31 @@ and parse_line (line : string) ~(d : DataState.data_areas) =
       system_version |> print_endline;
       d
     | ("+" | "-" | "*" | "/") as op -> eval_stack_op d ~op
+    | "drop" ->
+      let new_stack = ST.drop ~d:d.data_stack in
+      return_new_stack ~s:new_stack
+    | "dup" ->
+      (match ST.peek d.data_stack with
+       | None -> d
+       | Some x -> { d with data_stack = ST.push x ~stack:d.data_stack })
+    | "swap" ->
+      (match ST.pop d.data_stack with
+       | None -> d
+       | Some (x, stack1) ->
+         (match ST.pop stack1 with
+          | None -> d
+          | Some (y, stack2) ->
+            { d with data_stack = ST.push y ~stack:(ST.push x ~stack:stack2) }))
+    | "over" ->
+      (match ST.pop d.data_stack with
+       | None -> d
+       | Some (x, stack1) ->
+         (match ST.pop stack1 with
+          | None -> d
+          | Some (y, stack2) ->
+            { d with
+              data_stack = ST.push x ~stack:(ST.push y ~stack:(ST.push x ~stack:stack2))
+            }))
     | item -> parse_non_builtin line ~d)
 ;;
 
@@ -346,12 +383,22 @@ let () =
     match line with
     | "bye" -> Stdlib.exit 0
     | line ->
-      let line_cleaned = S.strip line in
-      if S.length line_cleaned = 0
-      then get_repl_line d ()
-      else (
-        let new_data_state = parse_line line_cleaned ~d in
-        get_repl_line new_data_state ())
+        (* Most of this needs to be moved to helpers for parse_line and then parse_line 
+           should be cleaned up *)
+        let line_cleaned = S.strip line in
+        let comments_removed = cleanup_line_comment line_cleaned in
+        if S.length comments_removed = 0 then
+          get_repl_line d ()
+        else if S.is_prefix comments_removed ~prefix:":" then
+          let new_data_state = parse_line comments_removed ~d in
+          get_repl_line new_data_state ()
+        else (
+          let words = S.split_on_chars comments_removed ~on:[' '; '\t'; '\n'] in
+          let new_data_state = 
+            List.fold words ~init:d ~f:(fun s w -> parse_line w ~d:s)
+          in
+          get_repl_line new_data_state ()
+        )
   in
   get_repl_line data_state ()
 ;;
