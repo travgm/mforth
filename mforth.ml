@@ -1,6 +1,6 @@
 (** mforth.ml v1.0.0
 
-    build with: ocamlfind ocamlopt -linkpkg -package base,stdio -o mforth mforth.ml
+    build with: ocamlfind ocamlopt -linkpkg -package base,stdio,ppx_let -o mforth mforth.ml
 
     Note:
     ❯ ocamlopt --version
@@ -10,6 +10,7 @@
 
 open Base
 open Stdio
+open Option.Let_syntax
 
 let version = "minimaForth 1.0.0"
 
@@ -203,18 +204,28 @@ let eval_stack_op (d : DataState.data_areas) ~(op : string) : DataState.data_are
      | None -> d
      | Some (y, stack2) ->
        let int_op, float_op = apply_op () in
-       let result =
-         match x, y with
-         | S.Int x, S.Int y -> S.Int (int_op x y)
-         | S.Int x, S.Float y -> S.Float (float_op (Float.of_int x) y)
-         | S.Float x, S.Int y -> S.Float (float_op x (Float.of_int y))
-         | S.Float x, S.Float y -> S.Float (float_op x y)
-         | _ ->
-           print_endline "Invalid operation, expecting a numeric";
-           S.Int 0
-       in
-       let new_stack = S.push result ~stack:stack2 in
-       { d with data_stack = new_stack })
+       if String.equal op "/"
+          &&
+          match x with
+          | S.Int x -> x = 0
+          | S.Float x -> Float.equal x 0.0
+          | _ -> false
+       then (
+         let new_stack = S.push (S.Int 0) ~stack:stack2 in
+         { d with data_stack = new_stack })
+       else (
+         let result =
+           match y, x with
+           | S.Int y, S.Int x -> S.Int (int_op y x)
+           | S.Int y, S.Float x -> S.Float (float_op (Float.of_int y) x)
+           | S.Float y, S.Int x -> S.Float (float_op y (Float.of_int x))
+           | S.Float y, S.Float x -> S.Float (float_op y x)
+           | _ ->
+             print_endline "Invalid operation, expecting a numeric";
+             S.Int 0
+         in
+         let new_stack = S.push result ~stack:stack2 in
+         { d with data_stack = new_stack }))
 ;;
 
 let try_parse_function (line : string) : func_record option =
@@ -266,21 +277,21 @@ let try_parse_number line =
   match Int.of_string_opt line with
   | Some n -> Some (ST.Int n)
   | None ->
-    (match Float.of_string_opt line with
-     | Some f -> Some (ST.Float f)
-     | None -> None)
+    let%bind f = Float.of_string_opt line in
+    Some (ST.Float f)
 ;;
 
 (* Main line parsers and REPL *)
 
 let cleanup_line_comment (line : string) : string =
   let module S = String in
-  if S.is_prefix line ~prefix:"(" && S.is_suffix line ~suffix:")"
+  let cleaned = S.strip line in
+  if S.is_prefix cleaned ~prefix:"(" && S.is_suffix cleaned ~suffix:")"
   then ""
   else (
-    match S.index line '(' with
-    | Some idx -> S.sub line ~pos:0 ~len:idx |> S.strip
-    | None -> line)
+    match S.index cleaned '(' with
+    | Some idx -> S.sub cleaned ~pos:0 ~len:idx |> S.strip
+    | None -> cleaned)
 ;;
 
 (* This parse_* needs to be refactored to helper functions and soon probably move this
@@ -383,22 +394,19 @@ let () =
     match line with
     | "bye" -> Stdlib.exit 0
     | line ->
-        (* Most of this needs to be moved to helpers for parse_line and then parse_line 
+      (* Most of this needs to be moved to helpers for parse_line and then parse_line 
            should be cleaned up *)
-        let line_cleaned = S.strip line in
-        let comments_removed = cleanup_line_comment line_cleaned in
-        if S.length comments_removed = 0 then
-          get_repl_line d ()
-        else if S.is_prefix comments_removed ~prefix:":" then
-          let new_data_state = parse_line comments_removed ~d in
-          get_repl_line new_data_state ()
-        else (
-          let words = S.split_on_chars comments_removed ~on:[' '; '\t'; '\n'] in
-          let new_data_state = 
-            List.fold words ~init:d ~f:(fun s w -> parse_line w ~d:s)
-          in
-          get_repl_line new_data_state ()
-        )
+      let comments_removed = cleanup_line_comment line in
+      if S.length comments_removed = 0
+      then get_repl_line d ()
+      else if S.is_prefix comments_removed ~prefix:":"
+      then (
+        let new_data_state = parse_line comments_removed ~d in
+        get_repl_line new_data_state ())
+      else (
+        let words = S.split_on_chars comments_removed ~on:[ ' '; '\t'; '\n' ] in
+        let new_data_state = List.fold words ~init:d ~f:(fun s w -> parse_line w ~d:s) in
+        get_repl_line new_data_state ())
   in
   get_repl_line data_state ()
 ;;
