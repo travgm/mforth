@@ -151,6 +151,21 @@ module Stack = struct
     | None -> d
     | Some (_, s) -> s
   ;;
+
+  let dup ~(d : t) : t =
+    match peek d with
+    | None -> d
+    | Some x -> push x ~stack:d
+  ;;
+
+  let swap ~(d : t) : t = 
+    match pop d with
+    | None -> d
+    | Some (x, s1) ->
+      match pop s1 with
+       | None -> d
+       | Some (y, s2) -> push y ~stack:(push x ~stack:s2)
+  ;;
 end
 
 module DataState = struct
@@ -359,17 +374,11 @@ and parse_line (line : string) ~(d : DataState.data_areas) =
       let new_stack = ST.drop ~d:d.data_stack in
       return_new_stack ~s:new_stack
     | "dup" ->
-      (match ST.peek d.data_stack with
-       | None -> d
-       | Some x -> { d with data_stack = ST.push x ~stack:d.data_stack })
+      let new_stack = ST.dup ~d:d.data_stack in
+      return_new_stack ~s:new_stack
     | "swap" ->
-      (match ST.pop d.data_stack with
-       | None -> d
-       | Some (x, stack1) ->
-         (match ST.pop stack1 with
-          | None -> d
-          | Some (y, stack2) ->
-            { d with data_stack = ST.push y ~stack:(ST.push x ~stack:stack2) }))
+      let new_stack = ST.swap ~d:d.data_stack in
+      return_new_stack ~s:new_stack
     | "over" ->
       (match ST.pop d.data_stack with
        | None -> d
