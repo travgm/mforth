@@ -152,19 +152,89 @@ module Stack = struct
     | Some (_, s) -> s
   ;;
 
+  let _2drop ~(d : t) : t =
+    match pop d with
+    | None -> d
+    | Some (_, s1) ->
+      (match pop s1 with
+       | None -> d
+       | Some (_, s2) -> s2)
+  ;;
+
   let dup ~(d : t) : t =
     match peek d with
     | None -> d
     | Some x -> push x ~stack:d
   ;;
 
-  let swap ~(d : t) : t = 
+  let _2dup ~(d : t) : t =
     match pop d with
     | None -> d
     | Some (x, s1) ->
-      match pop s1 with
+      (match pop s1 with
        | None -> d
-       | Some (y, s2) -> push y ~stack:(push x ~stack:s2)
+       | Some (y, s2) -> push x ~stack:(push y ~stack:(push x ~stack:s1)))
+  ;;
+
+  let swap ~(d : t) : t =
+    match pop d with
+    | None -> d
+    | Some (x, s1) ->
+      (match pop s1 with
+       | None -> d
+       | Some (y, s2) -> push y ~stack:(push x ~stack:s2))
+  ;;
+
+  let _2swap ~(d : t) : t =
+    match pop d with
+    | None -> d
+    | Some (w, s1) ->
+      (match pop s1 with
+       | None -> d
+       | Some (x, s2) ->
+         (match pop s2 with
+          | None -> d
+          | Some (y, s3) ->
+            (match pop s3 with
+             | None -> d
+             | Some (z, s4) ->
+               push x ~stack:(push w ~stack:(push z ~stack:(push y ~stack:s4))))))
+  ;;
+
+  let over ~(d : t) : t =
+    match pop d with
+    | None -> d
+    | Some (x, s1) ->
+      (match pop s1 with
+       | None -> d
+       | Some (y, s2) -> push x ~stack:(push y ~stack:(push x ~stack:s2)))
+  ;;
+
+  (* This handles both ( a b c -- b c a ) and ( a b c -- c a b ) depending if the reverse rotate
+     flag (~r) is set *)
+  let rot ~(d : t) ~(r : bool) : t =
+    match pop d with
+    | None -> d
+    | Some (x, s1) ->
+      (match pop s1 with
+       | None -> d
+       | Some (y, s2) ->
+         (match pop s2 with
+          | None -> d
+          | Some (z, s3) ->
+            if r
+            then push y ~stack:(push x ~stack:(push z ~stack:s3))
+            else push z ~stack:(push x ~stack:(push y ~stack:s3))))
+  ;;
+
+  let depth ~(d : t) : t =
+    if is_empty d
+    then d
+    else (
+      let item = wrap_stack_item (Int.to_string (size d)) in
+      match item with
+      | Some (Int x) -> push (Int x) ~stack:d
+      | _ -> d)
   ;;
 end
 
@@ -210,6 +280,7 @@ let eval_stack_op (d : DataState.data_areas) ~(op : string) : DataState.data_are
     | "-" -> ( - ), ( -. )
     | "*" -> ( * ), ( *. )
     | "/" -> ( / ), ( /. )
+    | "mod" -> Int.rem, Float.mod_float
     | _ -> ( + ), ( +. )
   in
   match S.pop d.data_stack with
@@ -369,26 +440,40 @@ and parse_line (line : string) ~(d : DataState.data_areas) =
     | ".ver" ->
       system_version |> print_endline;
       d
-    | ("+" | "-" | "*" | "/") as op -> eval_stack_op d ~op
+    (* Arithmetic operations *)
+    | ("+" | "-" | "*" | "/" | "mod") as op -> eval_stack_op d ~op
+    (* Stack operations *)
     | "drop" ->
       let new_stack = ST.drop ~d:d.data_stack in
+      return_new_stack ~s:new_stack
+    | "2drop" ->
+      let new_stack = ST._2drop ~d:d.data_stack in
       return_new_stack ~s:new_stack
     | "dup" ->
       let new_stack = ST.dup ~d:d.data_stack in
       return_new_stack ~s:new_stack
+    | "2dup" ->
+      let new_stack = ST._2dup ~d:d.data_stack in
+      return_new_stack ~s:new_stack
     | "swap" ->
       let new_stack = ST.swap ~d:d.data_stack in
       return_new_stack ~s:new_stack
+    | "2swap" ->
+      let new_stack = ST._2swap ~d:d.data_stack in
+      return_new_stack ~s:new_stack
     | "over" ->
-      (match ST.pop d.data_stack with
-       | None -> d
-       | Some (x, stack1) ->
-         (match ST.pop stack1 with
-          | None -> d
-          | Some (y, stack2) ->
-            { d with
-              data_stack = ST.push x ~stack:(ST.push y ~stack:(ST.push x ~stack:stack2))
-            }))
+      let new_stack = ST.swap ~d:d.data_stack in
+      return_new_stack ~s:new_stack
+    | "rot" ->
+      let new_stack = ST.rot ~d:d.data_stack ~r:false in
+      return_new_stack ~s:new_stack
+    | "-rot" ->
+      let new_stack = ST.rot ~d:d.data_stack ~r:true in
+      return_new_stack ~s:new_stack
+    | "depth" ->
+      let new_stack = ST.depth ~d:d.data_stack in
+      return_new_stack ~s:new_stack
+    (* Anything that isn't a builtin is then parsed in parse_non_builtin *)
     | item -> parse_non_builtin line ~d)
 ;;
 
