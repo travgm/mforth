@@ -241,11 +241,17 @@ end
 module DataState = struct
   module StringMap = Map.M (String)
 
+  type compilation_state =
+    | Normal
+    | IfBlock
+    | LoopBlock
+
   type data_areas =
     { memory : Memory.t
     ; data_stack : Stack.t
     ; return_stack : Stack.t
     ; dictionary : string list StringMap.t list
+    ; compilation_state : compilation_state
     }
 
   type t = { data : data_areas }
@@ -255,6 +261,7 @@ module DataState = struct
     ; data_stack = Stack.empty
     ; return_stack = Stack.empty
     ; dictionary = [ Map.empty (module String) ]
+    ; compilation_state = Normal
     }
   ;;
 
