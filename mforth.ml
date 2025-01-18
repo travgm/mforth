@@ -241,6 +241,8 @@ end
 module DataState = struct
   module StringMap = Map.M (String)
 
+  (* Help handle what compilation state we are in. If we are in a If block we need to compile code
+      or loop block. Normal execution is the default. *)
   type compilation_state =
     | Normal
     | IfBlock
